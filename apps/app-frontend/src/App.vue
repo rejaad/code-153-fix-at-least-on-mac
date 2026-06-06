@@ -11,7 +11,6 @@ import {
 import {
 	ArrowBigUpDashIcon,
 	ChangeSkinIcon,
-	CheckIcon,
 	CompassIcon,
 	DownloadIcon,
 	ExternalIcon,
@@ -37,11 +36,11 @@ import {
 	ButtonStyled,
 	commonMessages,
 	ContentInstallModal,
+	ContentUpdaterModal,
 	CreationFlowModal,
 	defineMessages,
 	I18nDebugPanel,
 	LoadingBar,
-	ModrinthHostingLogo,
 	NewsArticleCard,
 	NotificationPanel,
 	OverflowMenu,
@@ -77,7 +76,6 @@ import Breadcrumbs from '@/components/ui/Breadcrumbs.vue'
 import ErrorModal from '@/components/ui/ErrorModal.vue'
 import FriendsList from '@/components/ui/friends/FriendsList.vue'
 import AddServerToInstanceModal from '@/components/ui/install_flow/AddServerToInstanceModal.vue'
-import IncompatibilityWarningModal from '@/components/ui/install_flow/IncompatibilityWarningModal.vue'
 import UnknownPackWarningModal from '@/components/ui/install_flow/UnknownPackWarningModal.vue'
 import MinecraftAuthErrorModal from '@/components/ui/minecraft-auth-error-modal/MinecraftAuthErrorModal.vue'
 import AppSettingsModal from '@/components/ui/modal/AppSettingsModal.vue'
@@ -86,7 +84,6 @@ import InstallToPlayModal from '@/components/ui/modal/InstallToPlayModal.vue'
 import ModpackAlreadyInstalledModal from '@/components/ui/modal/ModpackAlreadyInstalledModal.vue'
 import UpdateToPlayModal from '@/components/ui/modal/UpdateToPlayModal.vue'
 import NavButton from '@/components/ui/NavButton.vue'
-import ServerInvitePopupBody from '@/components/ui/notifications/ServerInvitePopupBody.vue'
 import PrideFundraiserBanner from '@/components/ui/PrideFundraiserBanner.vue'
 import PromotionWrapper from '@/components/ui/PromotionWrapper.vue'
 import QuickInstanceSwitcher from '@/components/ui/QuickInstanceSwitcher.vue'
@@ -615,6 +612,16 @@ const {
 	handleModpackDuplicateCreateAnyway: handleContentInstallModpackDuplicateCreateAnyway,
 	handleModpackDuplicateGoToInstance: handleContentInstallModpackDuplicateGoToInstance,
 	setIncompatibilityWarningModal: setContentIncompatibilityWarningModal,
+	incompatibilityWarningVersions: contentInstallIncompatibilityWarningVersions,
+	incompatibilityWarningCurrentGameVersion: contentInstallIncompatibilityWarningCurrentGameVersion,
+	incompatibilityWarningCurrentLoader: contentInstallIncompatibilityWarningCurrentLoader,
+	incompatibilityWarningProjectType: contentInstallIncompatibilityWarningProjectType,
+	incompatibilityWarningProjectIconUrl: contentInstallIncompatibilityWarningProjectIconUrl,
+	incompatibilityWarningProjectName: contentInstallIncompatibilityWarningProjectName,
+	incompatibilityWarningMessage: contentInstallIncompatibilityWarningMessage,
+	incompatibilityWarningInstalling: contentInstallIncompatibilityWarningInstalling,
+	handleIncompatibilityWarningInstall: handleContentInstallIncompatibilityWarningInstall,
+	handleIncompatibilityWarningCancel: handleContentInstallIncompatibilityWarningCancel,
 } = contentInstall
 
 const serverInstall = createServerInstall({ router, handleError, popupNotificationManager })
@@ -635,6 +642,12 @@ const installToPlayModal = ref()
 const updateToPlayModal = ref()
 
 const modrinthLoginFlowWaitModal = ref()
+
+watch(incompatibilityWarningModal, (modal) => {
+	if (modal) {
+		setContentIncompatibilityWarningModal(modal)
+	}
+})
 
 setupAuthProvider(credentials, async (_redirectPath) => {
 	await signIn()
@@ -804,6 +817,11 @@ async function declineServerInviteNotification(notification) {
 	}
 }
 
+function openServerInviteInviterProfile(inviterName) {
+	if (!inviterName) return
+	openUrl(`${config.siteUrl}/user/${encodeURIComponent(inviterName)}`)
+}
+
 async function handleLiveNotification(notification) {
 	if (notification?.body?.type !== 'server_invite' || notification.read) return
 	if (displayedServerInviteNotifications.has(notification.id)) return
@@ -817,30 +835,17 @@ async function handleLiveNotification(notification) {
 		typeof inviterId === 'string' ? await get_user(inviterId, 'bypass').catch(() => null) : null
 
 	addPopupNotification({
-		title: 'Modrinth Hosting',
-		titleLogo: ModrinthHostingLogo,
-		bodyComponent: ServerInvitePopupBody,
-		bodyProps: {
-			inviterName: invitedBy?.username ?? null,
-			inviterAvatarUrl: invitedBy?.avatar_url ?? null,
-			serverName,
-		},
-		type: 'info',
-		buttons: [
-			{
-				label: 'Accept',
-				action: () => acceptServerInviteNotification(notification),
-				icon: CheckIcon,
-				color: 'brand',
-			},
-			{
-				label: 'Decline',
-				action: () => declineServerInviteNotification(notification),
-				icon: XIcon,
-				color: 'red',
-			},
-		],
+		title: serverName,
 		autoCloseMs: null,
+		toast: {
+			type: 'server-invite',
+			actorName: invitedBy?.username ?? null,
+			actorAvatarUrl: invitedBy?.avatar_url ?? null,
+			entityName: serverName,
+			onAccept: () => acceptServerInviteNotification(notification),
+			onDecline: () => declineServerInviteNotification(notification),
+			onOpenActor: () => openServerInviteInviterProfile(invitedBy?.username ?? null),
+		},
 	})
 }
 
@@ -1642,7 +1647,22 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 		@go-to-instance="handleModpackDuplicateGoToInstance"
 	/>
 	<AddServerToInstanceModal ref="addServerToInstanceModal" />
-	<IncompatibilityWarningModal ref="incompatibilityWarningModal" />
+	<ContentUpdaterModal
+		ref="incompatibilityWarningModal"
+		mode="incompatibility-warning"
+		:versions="contentInstallIncompatibilityWarningVersions"
+		:current-game-version="contentInstallIncompatibilityWarningCurrentGameVersion"
+		:current-loader="contentInstallIncompatibilityWarningCurrentLoader"
+		current-version-id=""
+		:is-app="true"
+		:project-type="contentInstallIncompatibilityWarningProjectType"
+		:project-icon-url="contentInstallIncompatibilityWarningProjectIconUrl"
+		:project-name="contentInstallIncompatibilityWarningProjectName"
+		:warning="contentInstallIncompatibilityWarningMessage"
+		:action-loading="contentInstallIncompatibilityWarningInstalling"
+		@update="handleContentInstallIncompatibilityWarningInstall"
+		@cancel="handleContentInstallIncompatibilityWarningCancel"
+	/>
 	<ModpackAlreadyInstalledModal
 		ref="contentInstallModpackAlreadyInstalledModal"
 		@create-anyway="handleContentInstallModpackDuplicateCreateAnyway"
